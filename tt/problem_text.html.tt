@@ -91,6 +91,15 @@ MathJax.Hub.Register.StartupHook('onLoad', function () {
   .submit_messages { margin: 15px 0; }
   .submit_form { margin-top: 15px; }
   .submit_input { margin-right: 5px; }
+
+  .current { border: 1px solid #4040ff; box-sizing: border-box; }
+  .nav_container { position: fixed; top: 0; right: 0; overflow: auto; max-height: 100vh; }
+  .n_item { display: flex; border: 1px solid #4040ff; border-top: none; }
+  .n_item:first-of-type { border-top: 1px solid #4040ff; }
+  .b_size { width: 35px; height: 18px; }
+  .n_button { text-align: center; text-decoration: none; display: inline-block; font-size: 16px; cursor: pointer; }
+  @media only screen and (max-width: 550px) { .nav_container { display: none; }
+}
 </style>
 </head>
 <body>
@@ -186,6 +195,11 @@ MathJax.Hub.Register.StartupHook('onLoad', function () {
   <hr>
 </div>
 [% END %]
+<div class="nav_container">
+  [% FOREACH p IN problems %]
+  <div class="n_item" id="p[% p.cpid %]_verdict"><a href="#p[% p.cpid %]" class="n_button b_size" title="[% p.title | html %]">[% p.code %]</a></div>
+  [% END %]
+</div>
 <script type="text/javascript">
 $('.problem_menu_trigger').click(function() { $(this).parent().next().toggle(); return false; });
 
@@ -248,6 +262,29 @@ $('.problem_text div.problem_menu li.langs a').click(function() {
       s.indexOf('pl=') < 0  ? s + ';pl=' + this.innerText : s.replace(/pl=[a-z]+/, 'pl=' + this.innerText);
   }
 });
+
+var $root = $('html, body');
+$(document).on('click', 'a[href^="#p"]', function (event) {
+  $root.animate({ scrollTop: $($.attr(this, 'href')).offset().top }, 400);
+  return false;
+});
+
+var nav_links = $('.n_item a');
+$(document).on('scroll', function() {
+  var from_top = window.scrollY;
+  $(nav_links).each(function() {
+    var link = $(this);
+    var section = $(link[0].hash)[0];
+    var eps = 10;
+    if (
+      section.offsetTop - eps <= from_top &&
+      section.offsetTop + section.offsetHeight > from_top
+    )
+      link.addClass('current');
+    else
+      link.removeClass('current');
+  })
+});
 [%- IF href_get_last_verdicts -%]
 if (sid)
   $(document).ready(function () {
@@ -257,11 +294,12 @@ if (sid)
         if (!result[r]) continue;
         var verdict = result[r][0];
         if (verdict) {
-            var v = $('#p' + r + ' .last_verdict > .verdict');
-            v.addClass('run_details_' + verdict);
-            v.find('a').attr('href', '[% href_static_path %]' + result[r][2]).text(verdict);
-            v.find('div').html(result[r][1] || '.&nbsp;');
-            v.parent().show();
+          var v = $('#p' + r + ' .last_verdict > .verdict');
+          v.addClass('run_details_' + verdict);
+          v.find('a').attr('href', '[% href_static_path %]' + result[r][2]).text(verdict);
+          v.find('div').html(result[r][1] || '.&nbsp;');
+          v.parent().show();
+          $('#p' + r + '_verdict').addClass('run_details_' + verdict);
         }
         if (result[r][3]) {
           var pd = $('#p' + r + ' .problem_details_link');
