@@ -195,10 +195,10 @@ MathJax.Hub.Register.StartupHook('onLoad', function () {
   <hr>
 </div>
 [% END %]
-<div class="nav_container">
-  [% FOREACH p IN problems %]
+<div class="nav_container hidden">
+  [% IF problems.size > 1; FOREACH p IN problems %]
   <div class="n_item" id="p[% p.cpid %]_verdict"><a href="#p[% p.cpid %]" class="n_button b_size" title="[% p.title | html %]">[% p.code %]</a></div>
-  [% END %]
+  [% END; END %]
 </div>
 <script type="text/javascript">
 $('.problem_menu_trigger').click(function() { $(this).parent().next().toggle(); return false; });
@@ -309,6 +309,7 @@ if (sid)
       }
       if (result.can_submit && has_submit) {
         gen_forms();
+        if (has_submit) $('.nav_container').removeClass('hidden');
       }
     });
   });
