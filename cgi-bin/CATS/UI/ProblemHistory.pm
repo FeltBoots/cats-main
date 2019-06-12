@@ -89,17 +89,22 @@ sub problem_history_tree_frame {
     $is_jury or return;
     my $pr = _get_problem_info($p) or return $p->redirect(url_f 'contests');
 
+    my $log = problem_history_delete_frame($p) if $p->{file_name};
     init_template($p, 'problem_history_tree.html.tt');
 
     my $tree = CATS::Problem::Storage::show_tree(
         $p->{pid}, $p->{hb}, $p->{file} || undef, $p->{repo_enc});
+
     for (@{$tree->{entries}}) {
         my %url_params = (file => $_->{name}, pid => $p->{pid}, hb => $p->{hb});
         if ($_->{type} eq 'blob') {
             $_->{href} = url_f('problem_history_blob', %url_params);
             $_->{href_raw} = url_f('problem_history_raw', %url_params);
-            $_->{href_edit} = url_f('problem_history_edit', %url_params)
-                if $pr->{is_jury} && is_allow_editing($tree, $p->{hb});
+            if ($pr->{is_jury} && is_allow_editing($tree, $p->{hb})) {
+                $_->{href_edit} = url_f('problem_history_edit', %url_params);
+                my %del_url = (file_name => $_->{name}, pid => $p->{pid}, hb => $p->{hb}, file => $p->{file});
+                $_->{href_delete} = url_f('problem_history_tree', %del_url);
+            }
         }
         elsif ($_->{type} eq 'tree') {
             $_->{href} = url_f('problem_history_tree', %url_params)
@@ -111,11 +116,38 @@ sub problem_history_tree_frame {
         tree => $tree,
         problem_title => $pr->{title},
         title_suffix => $pr->{title},
+        problem_import_log => $log,
+        messages => @{CATS::Messages::get()},
     );
 }
 
 sub detect_encoding_by_xml_header {
     $_[0] =~ /^(?:\xEF\xBB\xBF)?\s*<\?xml.*encoding="(.*)"\s*\?>/ ? uc $1 : 'WINDOWS-1251'
+}
+
+sub problem_history_delete_frame {
+    my ($p) = @_;
+    my $pr = _get_problem_info($p)
+        or return $p->redirect(url_f 'contests');
+    $pr->{is_jury} or return;
+
+    my CATS::Problem::Storage $ps = CATS::Problem::Storage->new;
+    !CATS::Problem::Storage::get_remote_url($pr->{repo}) &&
+        $p->{hb} eq CATS::Problem::Storage::get_latest_master_sha($p->{pid})
+        or return $p->redirect(url_f 'problem_history', pid => $p->{pid});
+
+    my $message = 'Delete file ' . $p->{file_name};
+    my ($error, $latest_sha, $parsed_problem) = $ps->delete_file(
+        $pr->{contest_id}, $p->{pid}, $p->{file_name}, $p->{file}, $message
+    );
+
+    unless ($error) {
+        $dbh->commit;
+        CATS::StaticPages::invalidate_problem_text(pid => $p->{pid});
+        return $p->redirect(url_f 'problem_history_commit', pid => $p->{pid}, h => $latest_sha);
+    }
+
+    $ps->encoded_import_log;
 }
 
 sub problem_history_blob_frame {
