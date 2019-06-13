@@ -206,7 +206,6 @@ sub problem_history_edit_frame {
     if (($p->{save} || $p->{upload}) && $p->{src_enc}) {
         ($content, $log) = $p->{save} ?
             save_content($p, $pr) : upload_content($p, $pr);
-        $log or return;
     }
 
     my @blob_params = ($p->{pid}, $hash_base, $p->{file});
@@ -256,7 +255,9 @@ sub save_content {
     my CATS::Problem::Storage $ps = CATS::Problem::Storage->new;
     Encode::from_to($content, $p->{enc} // 'UTF-8', $p->{src_enc});
     my ($error, $latest_sha, $parsed_problem) = $ps->change_file(
-        $pr->{contest_id}, $p->{pid}, $p->{file}, $content, $p->{message}, $p->{is_amend} || 0);
+        $pr->{contest_id}, $p->{pid}, $p->{file}, $content, $p->{message},
+        $p->{is_amend} || 0, $p->{new_name} || $p->{file}
+    );
 
     unless ($error) {
         $dbh->commit;

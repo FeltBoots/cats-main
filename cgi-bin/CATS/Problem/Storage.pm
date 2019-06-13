@@ -182,16 +182,39 @@ sub delete_file {
     );
 }
 
+sub _is_duplicate {
+    my ($self, $repo, $file) = @_;
+    my $tree = $repo->tree($repo->get_latest_master_sha);
+    for (@{$tree->{entries}}) {
+        return (1, $self->warning("File with name '$file' is already exist")) if $_->{name} eq $file;
+    }
+}
+
 sub change_file {
-    my ($self, $cid, $pid, $file, $content, $message, $is_amend) = @_;
+    my ($self, $cid, $pid, $file, $content, $message, $is_amend, $new_name) = @_;
+    $user->{git_author_name} && $user->{git_author_email} or return (-1, msg(1167));
 
     my $repo = get_repo($pid);
-    $repo->replace_file_content($file, $content);
 
-    return $self->load_problem(
+    if ($file ne $new_name) {
+        return -1 if $self->_is_duplicate($repo, $new_name);
+        $repo->mv($file, $new_name);
+    }
+
+    $repo->replace_file_content($new_name, $content);
+
+    my ($error, $latest_master_sha, $problem) = $self->load_problem(
         CATS::Problem::Source::PlainFiles->new(dir => $repo->get_dir, logger => $self),
         $cid, $pid, 1, undef, $message, $is_amend
     );
+
+    return (0, $latest_master_sha, $problem) unless $error;
+
+    if ($file ne $new_name) {
+        $repo->add();
+        $repo->rm(File::Spec->catfile($repo->get_dir, $new_name . ' -f'));
+    }
+    -1;
 }
 
 sub delete {
