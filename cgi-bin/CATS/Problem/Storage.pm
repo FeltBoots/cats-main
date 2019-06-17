@@ -184,7 +184,8 @@ sub delete_file {
 
 sub _is_file_exist {
     my ($self, $repo, $file, $dir) = @_;
-    my $tree = $repo->tree($repo->get_latest_master_sha, $dir);
+    my $tree = $dir ?
+        $repo->tree($repo->get_latest_master_sha, $dir) : $repo->tree($repo->get_latest_master_sha);
     for (@{$tree->{entries}}) {
         return (1, $self->warning("File with name '$file' is already exist")) if $_->{name} eq $file;
     }

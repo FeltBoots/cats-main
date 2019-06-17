@@ -68,16 +68,29 @@ sub set_history_paths_urls {
     }
 }
 
-sub set_submenu_for_tree_frame {
-    my ($pid, $hash, $file, @items) = @_;
-    $t->param(submenu => [
+sub _set_submenu_for_tree_frame {
+    my ($pid, $hash) = @_;
+    [
         { href => url_f('problem_details', pid => $pid), item => res_str(504) },
         { href => url_f('problem_history', pid => $pid), item => res_str(568) },
         { href => url_f('problem_history_commit', pid => $pid, h => $hash), item => res_str(571) },
         { href => url_f('problem_git_package', pid => $pid, sha => $hash), item => res_str(569) },
-        { href => url_f('problem_history_edit',
-            pid => $pid, hb => $hash, file => $file, create => 1), item => res_str(401)
-        },
+    ]
+}
+
+sub set_submenu_for_tree_frame {
+    my ($pid, $hash, $file, $create, @items) = @_;
+    my $menu = _set_submenu_for_tree_frame($pid, $hash);
+    if ($create) {
+        $menu = [
+            @$menu,
+            { href => url_f('problem_history_edit',
+                pid => $pid, hb => $hash, file => $file, create => 1), item => res_str(401)
+            },
+        ]
+    }
+    $t->param(submenu => [
+        @$menu,
         @items,
     ]);
 }
@@ -114,7 +127,7 @@ sub problem_history_tree_frame {
         }
     }
     set_history_paths_urls($p->{pid}, $tree->{paths});
-    set_submenu_for_tree_frame($p->{pid}, $p->{hb}, $p->{file});
+    set_submenu_for_tree_frame($p->{pid}, $p->{hb}, $p->{file}, 1);
     $t->param(
         tree => $tree,
         problem_title => $pr->{title},
@@ -165,7 +178,7 @@ sub problem_history_blob_frame {
     my @items = $pr->{is_jury} && is_allow_editing($blob, $p->{hb}) ?
         { href => url_f('problem_history_edit',
             file => $p->{file}, hb => $p->{hb}, pid => $p->{pid}), item => res_str(572) } : ();
-    set_submenu_for_tree_frame($p->{pid}, $p->{hb}, $p->{file}, @items);
+    set_submenu_for_tree_frame($p->{pid}, $p->{hb}, undef, undef, @items);
 
     $t->param(
         blob => $blob,
@@ -302,7 +315,7 @@ sub save_content {
     Encode::from_to($content, $p->{enc} // 'UTF-8', $p->{src_enc});
     my ($error, $latest_sha, $parsed_problem) = $ps->change_file(
         $pr->{contest_id}, $p->{pid}, $p->{file}, $content, $p->{message},
-        $p->{is_amend} || 0, $p->{new_name} || $p->{file}, $p->{create}, $p->{dir},
+        $p->{is_amend} || 0, $p->{new_name} || $p->{file}, $p->{create}, $p->{dir}
     );
 
     unless ($error) {
