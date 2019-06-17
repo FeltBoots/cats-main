@@ -69,12 +69,15 @@ sub set_history_paths_urls {
 }
 
 sub set_submenu_for_tree_frame {
-    my ($pid, $hash, @items) = @_;
+    my ($pid, $hash, $file, @items) = @_;
     $t->param(submenu => [
         { href => url_f('problem_details', pid => $pid), item => res_str(504) },
         { href => url_f('problem_history', pid => $pid), item => res_str(568) },
         { href => url_f('problem_history_commit', pid => $pid, h => $hash), item => res_str(571) },
         { href => url_f('problem_git_package', pid => $pid, sha => $hash), item => res_str(569) },
+        { href => url_f('problem_history_edit',
+            pid => $pid, hb => $hash, file => $file, create => 1), item => res_str(401)
+        },
         @items,
     ]);
 }
@@ -101,7 +104,7 @@ sub problem_history_tree_frame {
             $_->{href} = url_f('problem_history_blob', %url_params);
             $_->{href_raw} = url_f('problem_history_raw', %url_params);
             if ($pr->{is_jury} && is_allow_editing($tree, $p->{hb})) {
-                $_->{href_edit} = url_f('problem_history_edit', %url_params);
+                $_->{href_edit} = url_f('problem_history_edit', (%url_params, (dir => $p->{file})));
                 my %del_url = (file_name => $_->{name}, pid => $p->{pid}, hb => $p->{hb}, file => $p->{file});
                 $_->{href_delete} = url_f('problem_history_tree', %del_url);
             }
@@ -111,7 +114,7 @@ sub problem_history_tree_frame {
         }
     }
     set_history_paths_urls($p->{pid}, $tree->{paths});
-    set_submenu_for_tree_frame($p->{pid}, $p->{hb});
+    set_submenu_for_tree_frame($p->{pid}, $p->{hb}, $p->{file});
     $t->param(
         tree => $tree,
         problem_title => $pr->{title},
@@ -162,7 +165,7 @@ sub problem_history_blob_frame {
     my @items = $pr->{is_jury} && is_allow_editing($blob, $p->{hb}) ?
         { href => url_f('problem_history_edit',
             file => $p->{file}, hb => $p->{hb}, pid => $p->{pid}), item => res_str(572) } : ();
-    set_submenu_for_tree_frame($p->{pid}, $p->{hb}, @items);
+    set_submenu_for_tree_frame($p->{pid}, $p->{hb}, $p->{file}, @items);
 
     $t->param(
         blob => $blob,
@@ -184,29 +187,87 @@ sub problem_history_raw_frame {
         content => $blob->{content});
 }
 
-sub problem_history_edit_frame {
+sub _get_problem_info_redirect {
     my ($p) = @_;
+
     $is_jury or return;
     my $hash_base = $p->{hb};
 
     my $pr = _get_problem_info($p)
         or return $p->redirect(url_f 'contests');
+
     $pr->{is_jury} or return;
 
     !CATS::Problem::Storage::get_remote_url($pr->{repo}) &&
         $hash_base eq CATS::Problem::Storage::get_latest_master_sha($p->{pid})
         or return $p->redirect(url_f 'problem_history', pid => $p->{pid});
-    init_template($p, 'problem_history_edit.html.tt');
+    $pr;
+}
 
-    if ($p->{file} eq '*') {
-        $p->{file} = CATS::Problem::Storage::find_xml($p->{pid}, $hash_base) or return;
-    }
+sub problem_history_new_file_frame {
+    my ($p) = @_;
+    my $hash_base = $p->{hb};
+
+    problem_history_edit($p);
+
+    my $tree = CATS::Problem::Storage::show_tree(
+        $p->{pid}, $hash_base, $p->{file}, $p->{repo_enc} || 'UTF-8');
+    set_submenu_for_tree_frame($p->{pid}, $hash_base);
+    set_history_paths_urls($p->{pid}, $tree->{paths});
+
+    my $enc = 'UTF-8';
+    $t->param(
+        src_enc => $enc,
+        source_encodings => source_encodings($enc),
+    );
+}
+
+sub problem_history_edit {
+    my ($p) = @_;
+    my $pr = _get_problem_info_redirect($p) or return;
+
+    my $hash_base = $p->{hb};
+
+    init_template($p, 'problem_history_edit.html.tt');
 
     my ($content, $log);
     if (($p->{save} || $p->{upload}) && $p->{src_enc}) {
         ($content, $log) = $p->{save} ?
             save_content($p, $pr) : upload_content($p, $pr);
     }
+
+    my $enc = 'UTF-8';
+    my $keywords = $dbh->selectall_arrayref(q~
+        SELECT code FROM keywords~, { Slice => {} });
+    my $de_list = CATS::DevEnv->new(CATS::JudgeDB::get_DEs({ fields => 'syntax' }));
+    my $de = $de_list->by_file_extension($p->{file});
+    $t->param(
+        file => $p->{file},
+        problem_title => $pr->{title},
+        title_suffix => $p->{file},
+        last_commit => CATS::Problem::Storage::get_log($p->{pid}, $hash_base, 1)->[0],
+        message => Encode::decode_utf8($p->{message}),
+        is_amend => $p->{is_amend},
+        problem_import_log => $log,
+        cats_tags => $p->{file} =~ m/\.xml$/ ?
+            [ sort keys %{CATS::Problem::Parser::tag_handlers()} ] : [],
+        keywords => $keywords,
+        de_list => $de_list,
+        de_selected => $de,
+    );
+    $content;
+}
+
+sub problem_history_edit_frame {
+    my ($p) = @_;
+    return problem_history_new_file_frame($p) if $p->{create};
+
+    my $hash_base = $p->{hb};
+
+    if ($p->{file} eq '*') {
+        $p->{file} = CATS::Problem::Storage::find_xml($p->{pid}, $hash_base) or return;
+    }
+    my $content = problem_history_edit($p);
 
     my @blob_params = ($p->{pid}, $hash_base, $p->{file});
     my $blob = CATS::Problem::Storage::show_blob(
@@ -217,26 +278,11 @@ sub problem_history_edit_frame {
     set_submenu_for_tree_frame($p->{pid}, $hash_base);
     set_history_paths_urls($p->{pid}, $blob->{paths});
     my $enc = ref $blob->{encoding} ? 'UTF-8' : $blob->{encoding};
-    my $keywords = $dbh->selectall_arrayref(q~
-        SELECT code FROM keywords~, { Slice => {} });
-    my $de_list = CATS::DevEnv->new(CATS::JudgeDB::get_DEs({ fields => 'syntax' }));
-    my $de = $de_list->by_file_extension($p->{file});
+
     $t->param(
-        file => $p->{file},
         blob => $blob,
-        problem_title => $pr->{title},
-        title_suffix => $p->{file},
         src_enc => $enc,
         source_encodings => source_encodings($enc),
-        last_commit => CATS::Problem::Storage::get_log($p->{pid}, $hash_base, 1)->[0],
-        message => Encode::decode_utf8($p->{message}),
-        is_amend => $p->{is_amend},
-        problem_import_log => $log,
-        cats_tags => $p->{file} =~ m/\.xml$/ ?
-            [ sort keys %{CATS::Problem::Parser::tag_handlers()} ] : [],
-        keywords => $keywords,
-        de_list => $de_list,
-        de_selected => $de,
     );
 }
 
@@ -256,7 +302,7 @@ sub save_content {
     Encode::from_to($content, $p->{enc} // 'UTF-8', $p->{src_enc});
     my ($error, $latest_sha, $parsed_problem) = $ps->change_file(
         $pr->{contest_id}, $p->{pid}, $p->{file}, $content, $p->{message},
-        $p->{is_amend} || 0, $p->{new_name} || $p->{file}
+        $p->{is_amend} || 0, $p->{new_name} || $p->{file}, $p->{create}, $p->{dir},
     );
 
     unless ($error) {
