@@ -321,9 +321,7 @@ sub save_content {
     unless ($error) {
         $dbh->commit;
         CATS::StaticPages::invalidate_problem_text(pid => $p->{pid});
-        return _problem_commitdiff(
-            $p, $parsed_problem->{description}->{title},
-            $latest_sha, $p->{src_enc}, $ps->encoded_import_log);
+        return $p->redirect(url_f 'problem_history_commit', pid => $p->{pid}, h => $latest_sha);
     }
 
     $content = Encode::decode($p->{enc} // 'UTF-8', $p->{src});
